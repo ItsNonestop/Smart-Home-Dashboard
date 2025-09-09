@@ -1,0 +1,66 @@
+﻿@model SmartHomeDashboard.Models.Options.MonitorOptions
+@{
+    ViewData["Title"] = "Settings";
+}
+
+<section class="mb-4">
+    <div class="d-flex align-items-center justify-content-between mb-2 flex-wrap gap-2">
+        <h1 class="h3 m-0">Settings</h1>
+
+        <div class="d-flex align-items-center gap-2">
+            <a asp-controller="Settings" asp-action="DownloadLogsJson" class="btn btn-outline-secondary">Download logs (JSON)</a>
+            <a asp-controller="Settings" asp-action="DownloadLogsExcel" class="btn btn-primary">Download logs (Excel)</a>
+        </div>
+    </div>
+
+    <p class="text-secondary mb-3">
+        Read-only for now. These values are loaded from <code class="log-code">appsettings.json</code>. Editing is scaffolded below but intentionally disabled in this build.
+    </p>
+
+    <div class="shd-card p-3">
+        <form asp-controller="Settings" asp-action="Index" method="post" class="row g-3">
+            @Html.AntiForgeryToken()
+
+            <div class="col-12">
+                <div class="alert alert-warning m-0">
+                    <strong>Read-only:</strong> Editing is disabled in this build. Controls are shown for preview only.
+                </div>
+            </div>
+
+            <div class="col-12 col-md-6">
+                <label for="PollIntervalSeconds" class="form-label">Monitor poll interval (seconds)</label>
+                <input id="PollIntervalSeconds" name="PollIntervalSeconds" type="number" class="form-control"
+                       value="@Model.PollIntervalSeconds" min="5" max="3600" disabled />
+                <div class="form-text">How often the background monitor runs (5–3600).</div>
+            </div>
+
+            <div class="col-12 col-md-6">
+                <label for="PingTimeoutMs" class="form-label">Ping timeout (ms)</label>
+                <input id="PingTimeoutMs" name="PingTimeoutMs" type="number" class="form-control"
+                       value="@Model.PingTimeoutMs" min="100" max="10000" step="50" disabled />
+                <div class="form-text">ICMP ping timeout per device (100–10000).</div>
+            </div>
+
+            <div class="col-12 col-md-6">
+                <div class="form-check">
+                    <input id="TcpFallbackEnabled" name="TcpFallbackEnabled" class="form-check-input" type="checkbox"
+                           @(Model.TcpFallbackEnabled ? "checked" : "") disabled />
+                    <label class="form-check-label" for="TcpFallbackEnabled">Enable TCP fallback when ICMP is blocked</label>
+                </div>
+                <div class="form-text">If enabled, a quick TCP probe will be attempted when ping fails.</div>
+            </div>
+
+            <div class="col-12 col-md-6">
+                <label for="TcpPorts" class="form-label">TCP ports to try</label>
+                <input id="TcpPorts" name="TcpPorts" type="text" class="form-control"
+                       value="@(string.Join(", ", Model.TcpPorts ?? new List<int>()))" disabled />
+                <div class="form-text">Comma-separated; used only when TCP fallback is enabled.</div>
+            </div>
+
+            <div class="col-12 d-flex align-items-center gap-2">
+                <button type="submit" class="btn btn-success" disabled title="Editing disabled in this build">Save changes</button>
+                <a asp-controller="Home" asp-action="Index" class="btn btn-outline-secondary">Back to Dashboard</a>
+            </div>
+        </form>
+    </div>
+</section>

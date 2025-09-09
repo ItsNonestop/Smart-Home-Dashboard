@@ -1,0 +1,66 @@
+﻿@model SmartHomeDashboard.Models.Device
+@{
+    ViewData["Title"] = "Edit Device";
+}
+
+<section class="mb-4">
+    <div class="d-flex align-items-center justify-content-between mb-2">
+        <h1 class="h3 m-0">Edit Device</h1>
+
+        <div class="d-flex gap-2">
+            <!-- Delete (POST) with a confirmation prompt -->
+            <form asp-controller="Devices" asp-action="Delete" asp-route-id="@Model.Id" method="post"
+                  onsubmit="return confirm('Delete this device? This cannot be undone.');">
+                <button type="submit" class="btn btn-outline-danger">Delete</button>
+            </form>
+
+            <a asp-controller="Home" asp-action="Index" class="btn btn-outline-secondary">Cancel</a>
+        </div>
+    </div>
+    <p class="text-secondary mb-3">Update basic details. Disabling a device will exclude it from monitoring.</p>
+
+    <div class="shd-card p-3">
+        <form asp-controller="Devices" asp-action="Edit" method="post" novalidate>
+            <div asp-validation-summary="ModelOnly" class="text-danger mb-3"></div>
+
+            <!-- Hidden Id for binding -->
+            <input type="hidden" asp-for="Id" />
+
+            <div class="row g-3">
+                <div class="col-12 col-md-6">
+                    <label asp-for="Name" class="form-label">Name</label>
+                    <input asp-for="Name" class="form-control" />
+                    <span asp-validation-for="Name" class="text-danger"></span>
+                </div>
+
+                <div class="col-12 col-md-6">
+                    <label asp-for="IpAddress" class="form-label">IP address</label>
+                    <input asp-for="IpAddress" class="form-control" />
+                    <span asp-validation-for="IpAddress" class="text-danger"></span>
+                </div>
+
+                <div class="col-12 col-md-6">
+                    <label asp-for="Vlan" class="form-label">VLAN</label>
+                    <input asp-for="Vlan" class="form-control" />
+                    <span asp-validation-for="Vlan" class="text-danger"></span>
+                </div>
+
+                <div class="col-12 col-md-6 d-flex align-items-end">
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" asp-for="Enabled" />
+                        <label class="form-check-label" asp-for="Enabled">Enabled</label>
+                    </div>
+                </div>
+            </div>
+
+            <div class="mt-4 d-flex gap-2">
+                <button type="submit" class="btn btn-primary">Save Changes</button>
+                <a asp-controller="Home" asp-action="Index" class="btn btn-outline-secondary">Cancel</a>
+            </div>
+        </form>
+    </div>
+</section>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

@@ -1,0 +1,201 @@
+﻿@model IReadOnlyList<SmartHomeDashboard.Models.Device>
+@{
+    ViewData["Title"] = "Dashboard";
+}
+
+<section class="mb-4">
+    <div class="d-flex align-items-center justify-content-between mb-2">
+        <h1 class="h3 m-0">Device Overview</h1>
+        <a asp-controller="Devices" asp-action="Create" class="btn btn-primary" role="button" title="Add a new device">Add Device</a>
+    </div>
+    <p class="text-secondary mb-3">Quick status of your IoT devices at a glance.</p>
+
+    <div class="row g-3" id="devicesGrid">
+        @foreach (var d in Model)
+        {
+            <div class="col-12 col-md-6 col-lg-4">
+                <article class="device-card h-100 @(d.Enabled ? "" : "device-disabled")"
+                         data-device-id="@d.Id">
+                    <header class="d-flex align-items-center justify-content-between">
+                        <div class="d-flex align-items-center gap-2 fw-semibold">
+                            <span class="emoji">@IconFor(d)</span>
+                            <span data-field="name">@d.Name</span>
+                        </div>
+                        <small class="text-secondary" data-field="lastseen">Last seen @d.LastSeenLabel</small>
+                    </header>
+
+                    <div class="device-body">
+                        <dl class="row mb-2 small">
+                            <dt class="col-4 text-secondary">IP</dt>
+                            <dd class="col-8" data-field="ip">@d.IpAddress</dd>
+                            <dt class="col-4 text-secondary">VLAN</dt>
+                            <dd class="col-8" data-field="vlan">@d.Vlan</dd>
+                        </dl>
+
+                        <div class="d-flex align-items-center justify-content-between">
+                            <div class="status-chip @(d.IsOnline ? "online" : "offline")" data-field="status">
+                                @(d.IsOnline ? "Online" : "Offline")
+                            </div>
+
+                            <div class="d-flex align-items-center gap-2">
+                                <button class="icon-btn" title="Signal details" aria-label="Signal details">📶</button>
+
+                                <a class="icon-btn" asp-controller="Devices" asp-action="Edit" asp-route-id="@d.Id"
+                                   title="Edit device" aria-label="Edit device">⚙️</a>
+
+                                <form asp-controller="Devices" asp-action="ToggleEnabled" asp-route-id="@d.Id" method="post" class="m-0 p-0">
+                                    <button type="submit" class="icon-btn"
+                                            title="@(d.Enabled ? "Disable device" : "Enable device")"
+                                            aria-label="@(d.Enabled ? "Disable device" : "Enable device")">
+                                        ⏽
+                                    </button>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                </article>
+            </div>
+        }
+    </div>
+</section>
+
+<section>
+    <div class="d-flex align-items-center justify-content-between mb-2">
+        <h2 class="h4 m-0">Logs / Alerts</h2>
+        <a class="btn btn-outline-secondary btn-sm" asp-controller="Logs" asp-action="Index">Open full logs</a>
+    </div>
+
+    <!-- Scrolling container so the page height stays compact (shows ~9 items) -->
+    <div class="log-panel log-panel--scroll">
+        <ul class="list-group list-group-flush" id="logsList">
+            <!-- Populated by /api/logs polling -->
+        </ul>
+    </div>
+</section>
+
+@section Scripts {
+    <script>
+        // Devices + Logs lightweight polling using ETag/304.
+        (function () {
+            let devTag = null;
+            let logTag = null;
+
+            const grid = document.getElementById('devicesGrid');
+            const logs = document.getElementById('logsList');
+
+            function relTime(isoUtc) {
+                if (!isoUtc) return 'never';
+                const now = Date.now();
+                const then = Date.parse(isoUtc);
+                if (isNaN(then)) return 'never';
+                const delta = Math.max(0, Math.floor((now - then) / 1000));
+                if (delta < 30) return 'just now';
+                if (delta < 120) return '1 min ago';
+                if (delta < 3600) return Math.floor(delta / 60) + ' min ago';
+                if (delta < 7200) return '1 hour ago';
+                if (delta < 86400) return Math.floor(delta / 3600) + ' hours ago';
+                if (delta < 172800) return 'yesterday';
+                return Math.floor(delta / 86400) + ' days ago';
+            }
+
+            function applyDevices(list) {
+                const currentIds = new Set(Array.from(grid.querySelectorAll('[data-device-id]')).map(e => e.getAttribute('data-device-id')));
+                const responseIds = new Set(list.map(d => d.id));
+                if (currentIds.size !== responseIds.size) { location.reload(); return; }
+                for (const d of list) {
+                    if (!currentIds.has(d.id)) { location.reload(); return; }
+
+                    const card = grid.querySelector('[data-device-id="' + d.id + '"]');
+                    if (!card) { location.reload(); return; }
+
+                    // Enabled -> dim card
+                    if (d.enabled) card.classList.remove('device-disabled'); else card.classList.add('device-disabled');
+
+                    // Status
+                    const chip = card.querySelector('[data-field="status"]');
+                    if (chip) {
+                        const isOnline = (d.status || '').toLowerCase() === 'online';
+                        chip.textContent = isOnline ? 'Online' : 'Offline';
+                        chip.classList.toggle('online', isOnline);
+                        chip.classList.toggle('offline', !isOnline);
+                    }
+
+                    // Last seen
+                    const last = card.querySelector('[data-field="lastseen"]');
+                    if (last) last.textContent = 'Last seen ' + relTime(d.lastSeenUtc);
+
+                    // Text fields (safe updates)
+                    const nameEl = card.querySelector('[data-field="name"]');
+                    if (nameEl && d.name) nameEl.textContent = d.name;
+                    const ipEl = card.querySelector('[data-field="ip"]');
+                    if (ipEl && d.ipAddress) ipEl.textContent = d.ipAddress;
+                    const vlanEl = card.querySelector('[data-field="vlan"]');
+                    if (vlanEl) vlanEl.textContent = d.vlan || '';
+                }
+            }
+
+            function applyLogs(list) {
+                // Compact items: [HH:mm:ss UTC] Message (DeviceName)
+                const frag = document.createDocumentFragment();
+                for (const e of list) {
+                    const li = document.createElement('li');
+                    li.className = 'list-group-item log-item';
+                    const dt = new Date(e.timestampUtc);
+                    const hh = String(dt.getUTCHours()).padStart(2, '0');
+                    const mm = String(dt.getUTCMinutes()).padStart(2, '0');
+                    const ss = String(dt.getUTCSeconds()).padStart(2, '0');
+                    const who = e.deviceName ? ' ' + '(' + e.deviceName + ')' : '';
+                    li.textContent = '[' + hh + ':' + mm + ':' + ss + ' UTC] ' + e.message + who;
+                    frag.appendChild(li);
+                }
+                logs.innerHTML = '';
+                logs.appendChild(frag);
+            }
+
+            async function pollDevices() {
+                try {
+                    const res = await fetch('/api/devices', { headers: devTag ? { 'If-None-Match': devTag } : {} });
+                    if (res.status === 304) return;
+                    if (res.ok) {
+                        const tag = res.headers.get('ETag'); if (tag) devTag = tag;
+                        const data = await res.json();
+                        applyDevices(data);
+                    }
+                } catch { /* ignore */ }
+            }
+
+            async function pollLogs() {
+                try {
+                    const res = await fetch('/api/logs?count=9', { headers: logTag ? { 'If-None-Match': logTag } : {} });
+                    if (res.status === 304) return;
+                    if (res.ok) {
+                        const tag = res.headers.get('ETag'); if (tag) logTag = tag;
+                        const data = await res.json();
+                        applyLogs(data);
+                    }
+                } catch { /* ignore */ }
+            }
+
+            function start() {
+                // Initial
+                pollDevices(); pollLogs();
+                // Then repeat with stagger to avoid bursting
+                setInterval(pollDevices, 10000);
+                setTimeout(() => setInterval(pollLogs, 10000), 2000);
+            }
+
+            document.addEventListener('DOMContentLoaded', start);
+        })();
+    </script>
+}
+
+@functions {
+    private static string IconFor(SmartHomeDashboard.Models.Device d)
+    {
+        var name = d?.Name ?? string.Empty;
+        if (name.Contains("camera", System.StringComparison.OrdinalIgnoreCase)) return "📷";
+        if (name.Contains("light", System.StringComparison.OrdinalIgnoreCase)) return "💡";
+        if (name.Contains("thermostat", System.StringComparison.OrdinalIgnoreCase)) return "🌡️";
+        return "🧩";
+    }
+}

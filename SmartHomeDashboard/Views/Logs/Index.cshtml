@@ -1,0 +1,300 @@
+﻿@model IReadOnlyList<SmartHomeDashboard.Repositories.LogsRepository.LogEntry>
+@{
+    ViewData["Title"] = "Logs";
+    var take = (int)(ViewBag.Take ?? 500);
+}
+
+<section class="mb-4">
+    <div class="d-flex align-items-center justify-content-between mb-2 flex-wrap gap-2">
+        <h1 class="h3 m-0">Logs</h1>
+
+        <form asp-controller="Logs" asp-action="Index" method="get" class="d-flex align-items-center gap-2">
+            <label for="take" class="form-label m-0">Show</label>
+            <input id="take" name="take" type="number" class="form-control" style="width:110px"
+                   min="50" max="1000" value="@take" />
+            <span>entries</span>
+            <button type="submit" class="btn btn-outline-secondary">Apply</button>
+        </form>
+    </div>
+
+    <div class="d-flex align-items-center gap-2 flex-wrap mb-3">
+        <div class="d-flex align-items-center gap-2">
+            <label for="filterLevel" class="form-label m-0">Level</label>
+            <select id="filterLevel" class="form-select" style="width:160px">
+                <option value="all" selected>All</option>
+                <option value="info">Info</option>
+                <option value="warning">Warning</option>
+                <option value="error">Error</option>
+                <option value="success">Success</option>
+            </select>
+        </div>
+        <div class="d-flex align-items-center gap-2">
+            <label for="filterSource" class="form-label m-0">Source</label>
+            <select id="filterSource" class="form-select" style="width:180px">
+                <option value="all" selected>All</option>
+                <option value="monitor">Monitor</option>
+                <option value="useraction">UserAction</option>
+                <option value="system">System</option>
+            </select>
+        </div>
+        <button id="filtersReset" class="btn btn-outline-secondary">Reset</button>
+    </div>
+
+    <p class="text-secondary mb-3">
+        Newest first. Use filters above. Click “Details” for context or “Copy JSON” to copy the full entry for debugging.
+    </p>
+
+    <div class="shd-card p-0">
+        <ul class="list-group list-group-flush" id="logsFullList" data-count="@take">
+            <li class="list-group-item log-item">
+                <div class="p-4 text-center text-secondary">Loading logs…</div>
+            </li>
+        </ul>
+    </div>
+</section>
+
+@section Scripts {
+    <script>
+        // Full Logs page with polling + client-side filters + "Copy JSON"
+        // Enhancements:
+        //  - Long values show in <code> with title tooltips
+        //  - Filters persist in the URL (?level=&source=&take=)
+        (function () {
+            let etag = null;
+            const list = document.getElementById('logsFullList');
+            const count = parseInt(list.getAttribute('data-count') || '500', 10);
+
+            const selLevel = document.getElementById('filterLevel');
+            const selSource = document.getElementById('filterSource');
+            const btnReset = document.getElementById('filtersReset');
+
+            /** Last payload from the server (unfiltered) */
+            let allRows = [];
+            /** Map Id -> row object (for Copy JSON) */
+            const byId = new Map();
+
+            const allowedLevels = new Set(['all','info','warning','error','success']);
+            const allowedSources = new Set(['all','monitor','useraction','system']);
+
+            // ---- Helpers ----
+            function escapeHtml(s) {
+                return String(s ?? '').replace(/[&<>"']/g, ch => ({
+                    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+                }[ch]));
+            }
+
+            function levelBadge(level) {
+                const v = (level || '').toLowerCase();
+                if (v === 'error') return 'text-bg-danger';
+                if (v === 'warning' || v === 'warn') return 'text-bg-warning';
+                if (v === 'success') return 'text-bg-success';
+                return 'text-bg-primary';
+            }
+
+            function fmtLocal(iso) {
+                const dt = new Date(iso);
+                if (isNaN(dt.getTime())) return iso || '';
+                const yyyy = dt.getFullYear();
+                const mm = String(dt.getMonth() + 1).padStart(2, '0');
+                const dd = String(dt.getDate()).padStart(2, '0');
+                const hh = String(dt.getHours()).padStart(2, '0');
+                const mi = String(dt.getMinutes()).padStart(2, '0');
+                const ss = String(dt.getSeconds()).padStart(2, '0');
+                return `${yyyy}-${mm}-${dd} ${hh}:${mi}:${ss}`;
+            }
+
+            function applyFilters() {
+                const lvl = (selLevel.value || 'all').toLowerCase();
+                const src = (selSource.value || 'all').toLowerCase();
+
+                // Update URL query parameters without reloading
+                const url = new URL(window.location.href);
+                url.searchParams.set('take', String(count));
+                url.searchParams.set('level', lvl);
+                url.searchParams.set('source', src);
+                history.replaceState(null, '', url.toString());
+
+                const filtered = allRows.filter(e => {
+                    const l = (e.level || '').toLowerCase();
+                    const s = (e.source || '').toLowerCase();
+                    const okLevel = (lvl === 'all') || (l === lvl);
+                    const okSource = (src === 'all') || (s === src);
+                    return okLevel && okSource;
+                });
+
+                render(filtered);
+            }
+
+            function codeCell(value) {
+                const v = value ?? '';
+                const safe = escapeHtml(v);
+                return `<code class="log-code" title="${safe}">${safe}</code>`;
+            }
+
+            function render(rows) {
+                // Keep which <details> are open by id
+                const openIds = new Set(Array.from(list.querySelectorAll('li[data-id] details[open]'))
+                    .map(d => d.closest('li[data-id]')?.getAttribute('data-id'))
+                    .filter(Boolean));
+
+                const frag = document.createDocumentFragment();
+
+                if (!rows || rows.length === 0) {
+                    const li = document.createElement('li');
+                    li.className = 'list-group-item log-item';
+                    li.innerHTML = '<div class="p-4 text-center text-secondary">No logs match the filters.</div>';
+                    frag.appendChild(li);
+                } else {
+                    for (const e of rows) {
+                        const li = document.createElement('li');
+                        li.className = 'list-group-item log-item';
+                        li.setAttribute('data-id', e.id);
+
+                        const badgeLevel = levelBadge(e.level);
+                        const deviceName = e.deviceName ? ` <span class="text-secondary">(${escapeHtml(e.deviceName)})</span>` : '';
+                        const localText = fmtLocal(e.timestampUtc);
+                        const msg = escapeHtml(e.message || '');
+
+                        // Build details table (keys + values wrapped in code + title tooltip)
+                        let detailsHtml = '';
+                        if (e.details && Object.keys(e.details).length > 0) {
+                            const rows = Object.entries(e.details).map(([k, v]) =>
+                                `<tr><th class="text-secondary fw-normal" style="width:40%;">${codeCell(k)}</th><td>${codeCell(v)}</td></tr>`
+                            ).join('');
+                            detailsHtml = `<table class="table table-sm m-0"><tbody>${rows}</tbody></table>`;
+                        } else {
+                            detailsHtml = `<div class="text-secondary">None</div>`;
+                        }
+
+                        li.innerHTML = `
+                        <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
+                            <div class="d-flex align-items-center gap-2">
+                                <time class="log-time small text-secondary" title="UTC: ${escapeHtml(e.timestampUtc)}">${localText}</time>
+                                <span class="badge ${badgeLevel}">${escapeHtml(e.level || 'Info')}</span>
+                                <span class="badge text-bg-light">${escapeHtml(e.source || 'System')}</span>
+                                <span class="badge text-bg-light">${escapeHtml(e.action || 'Log')}</span>
+                            </div>
+
+                            <div class="flex-grow-1 ms-0 ms-md-2">
+                                <div class="fw-semibold">${msg}${deviceName}</div>
+                                <div class="small text-secondary">Actor: ${escapeHtml(e.actor || 'system')}</div>
+                            </div>
+
+                            <div class="d-flex align-items-center gap-2 ms-auto">
+                                <button class="btn btn-sm btn-outline-secondary copy-json" data-id="${e.id}">Copy JSON</button>
+                                <details${openIds.has(e.id) ? ' open' : ''}>
+                                    <summary class="btn btn-sm btn-outline-secondary">Details</summary>
+                                    <div class="mt-2">
+                                        <div class="row g-2 small">
+                                            <div class="col-12 col-md-6">
+                                                <div class="border rounded p-2">
+                                                    <div><span class="text-secondary">Id:</span> ${codeCell(e.id)}</div>
+                                                    <div><span class="text-secondary">Timestamp (UTC):</span> ${codeCell(e.timestampUtc)}</div>
+                                                    ${e.deviceId ? `<div><span class="text-secondary">DeviceId:</span> ${codeCell(e.deviceId)}</div>` : ''}
+                                                    ${e.deviceName ? `<div><span class="text-secondary">DeviceName:</span> ${codeCell(e.deviceName)}</div>` : ''}
+                                                    <div><span class="text-secondary">Source:</span> ${codeCell(e.source || 'System')}</div>
+                                                    <div><span class="text-secondary">Action:</span> ${codeCell(e.action || 'Log')}</div>
+                                                    <div><span class="text-secondary">Actor:</span> ${codeCell(e.actor || 'system')}</div>
+                                                </div>
+                                            </div>
+                                            <div class="col-12 col-md-6">
+                                                <div class="border rounded p-2">
+                                                    <div class="fw-semibold mb-1">Details</div>
+                                                    ${detailsHtml}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </details>
+                            </div>
+                        </div>`;
+
+                        frag.appendChild(li);
+                    }
+                }
+
+                list.innerHTML = '';
+                list.appendChild(frag);
+
+                // Wire up Copy JSON buttons using the in-memory map
+                const buttons = list.querySelectorAll('.copy-json');
+                for (const b of buttons) {
+                    b.addEventListener('click', async () => {
+                        const id = b.getAttribute('data-id');
+                        const obj = byId.get(id);
+                        if (!obj) return;
+                        try {
+                            await navigator.clipboard.writeText(JSON.stringify(obj, null, 2));
+                            const old = b.textContent;
+                            b.textContent = 'Copied!';
+                            setTimeout(() => b.textContent = old, 1200);
+                        } catch { /* ignore */ }
+                    });
+                }
+            }
+
+            async function poll() {
+                try {
+                    const res = await fetch('/api/logs?count=' + count, {
+                        headers: etag ? { 'If-None-Match': etag } : {}
+                    });
+                    if (res.status === 304) return;
+                    if (res.ok) {
+                        const tag = res.headers.get('ETag'); if (tag) etag = tag;
+                        const data = await res.json();
+
+                        // Update caches
+                        allRows = data;
+                        byId.clear();
+                        for (const e of data) byId.set(e.id, e);
+
+                        // Apply current filters
+                        applyFilters();
+                    }
+                } catch { /* ignore transient errors */ }
+            }
+
+            // ---- Initialize filters from URL ----
+            (function initFiltersFromUrl() {
+                const url = new URL(window.location.href);
+                const lvl = (url.searchParams.get('level') || 'all').toLowerCase();
+                const src = (url.searchParams.get('source') || 'all').toLowerCase();
+
+                selLevel.value = allowedLevels.has(lvl) ? lvl : 'all';
+                selSource.value = allowedSources.has(src) ? src : 'all';
+            })();
+
+            // Filter events
+            selLevel.addEventListener('change', applyFilters);
+            selSource.addEventListener('change', applyFilters);
+            btnReset.addEventListener('click', function () {
+                selLevel.value = 'all';
+                selSource.value = 'all';
+                applyFilters();
+            });
+
+            // Start polling after DOM ready
+            document.addEventListener('DOMContentLoaded', function () {
+                poll();
+                setInterval(poll, 10000);
+            });
+        })();
+    </script>
+}
+
+<style>
+    .log-item {
+        background: transparent;
+        color: var(--shd-text);
+        border-color: var(--shd-border);
+    }
+
+    details > summary {
+        list-style: none;
+        cursor: pointer;
+    }
+
+        details > summary::-webkit-details-marker {
+            display: none;
+        }
+</style>

@@ -1,0 +1,142 @@
+﻿@{
+    var title = ViewData["Title"] as string ?? "Smart Home Dashboard";
+}
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>@title · SmartHomeDashboard</title>
+
+    <link rel="stylesheet" href="~/lib/bootstrap/dist/css/bootstrap.min.css" />
+    <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
+
+    <style>
+        /* Theme tokens live here so they are available before first paint */
+        :root {
+            --shd-accent: #3b82f6;
+        }
+
+        html[data-theme="light"] {
+            --shd-bg: #f3f5f8;
+            --shd-surface: #ffffff;
+            --shd-text: #0f172a;
+            --shd-muted: #6b7280;
+            --shd-border: #e5e7eb;
+        }
+
+        html[data-theme="dark"] {
+            --shd-bg: #0f172a;
+            --shd-surface: #0b1222;
+            --shd-text: #e5e7eb;
+            --shd-muted: #9ca3af;
+            --shd-border: #1f2937;
+        }
+
+        .navbar-brand .emoji {
+            font-size: 1.15rem;
+            margin-right: .35rem;
+        }
+
+        .theme-btn {
+            width: 44px;
+            height: 36px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .main-wrap {
+            background: var(--shd-bg);
+            min-height: 100vh;
+        }
+
+        .footer-note {
+            color: var(--shd-muted);
+        }
+    </style>
+</head>
+<body>
+    <div class="main-wrap d-flex flex-column">
+        <header>
+            <nav class="navbar navbar-expand-lg" style="background: var(--shd-surface); border-bottom: 1px solid var(--shd-border);">
+                <div class="container-xl">
+                    <a class="navbar-brand fw-semibold text-decoration-none" asp-controller="Home" asp-action="Index">
+                        <span class="emoji">🏠</span> Smart Home Dashboard
+                    </a>
+
+                    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#mainNav" aria-controls="mainNav" aria-expanded="false" aria-label="Toggle navigation">
+                        <span class="navbar-toggler-icon"></span>
+                    </button>
+
+                    <div class="collapse navbar-collapse" id="mainNav">
+                        <ul class="navbar-nav me-auto mb-2 mb-lg-0">
+                            <li class="nav-item">
+                                <a class="nav-link" asp-controller="Home" asp-action="Index">Dashboard</a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link" asp-controller="Logs" asp-action="Index">Logs</a>
+                            </li>
+                            <li class="nav-item">
+                                <!-- Enabled Settings link -->
+                                <a class="nav-link" asp-controller="Settings" asp-action="Index">Settings</a>
+                            </li>
+                        </ul>
+
+                        <div class="d-flex align-items-center gap-2">
+                            <button id="themeToggle" class="btn btn-outline-secondary theme-btn" type="button" aria-pressed="false" title="Toggle theme">🌙</button>
+                            <a asp-controller="Devices" asp-action="Create" class="btn btn-primary">Add Device</a>
+                        </div>
+                    </div>
+                </div>
+            </nav>
+        </header>
+
+        <main role="main" class="flex-grow-1">
+            <div class="container-xl py-4">
+                @RenderBody()
+            </div>
+        </main>
+
+        <footer class="py-4 mt-auto">
+            <div class="container-xl d-flex justify-content-between">
+                <div class="footer-note">© @DateTime.UtcNow.Year SmartHomeDashboard</div>
+                <div class="footer-note">ASP.NET Core 8 MVC</div>
+            </div>
+        </footer>
+    </div>
+
+    <!-- Scripts (kept to default template libs for compatibility) -->
+    <script src="~/lib/jquery/dist/jquery.min.js"></script>
+    <script src="~/lib/bootstrap/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="~/js/site.js" asp-append-version="true"></script>
+
+    <script>
+        // Theme toggle + persistence
+        (function () {
+            const key = 'shd-theme';
+            const html = document.documentElement;
+            const btn = document.getElementById('themeToggle');
+
+            function icon() {
+                const dark = html.getAttribute('data-theme') === 'dark';
+                btn.textContent = dark ? '☀️' : '🌙';
+                btn.setAttribute('aria-pressed', dark ? 'true' : 'false');
+            }
+            btn.addEventListener('click', function () {
+                const next = html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+                html.setAttribute('data-theme', next);
+                localStorage.setItem(key, next);
+                icon();
+            });
+            (function init() {
+                const pref = localStorage.getItem(key);
+                if (pref) html.setAttribute('data-theme', pref);
+                icon();
+            })();
+        })();
+    </script>
+
+    @await RenderSectionAsync("Scripts", required: false)
+</body>
+</html>

@@ -1,0 +1,256 @@
+/* SmartHomeDashboard — global styles (light + dark, no experimental CSS) */
+
+/* ----- Base helpers ----- */
+:root { /* theme variables are defined in _Layout to apply before paint */
+}
+
+html, body {
+    height: 100%;
+}
+
+body {
+    background-color: var(--shd-bg);
+    color: var(--shd-text);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+/* Keep links neutral by default; buttons use .btn classes for color */
+a {
+    color: inherit;
+    text-decoration: none;
+}
+
+    a:hover {
+        text-decoration: underline;
+    }
+
+/* Navbar link styling (restore non-blue look) */
+.navbar .navbar-brand {
+    color: var(--shd-text) !important;
+}
+
+    .navbar .navbar-brand:hover {
+        color: var(--shd-text) !important;
+        opacity: .95;
+        text-decoration: none;
+    }
+
+.navbar .nav-link {
+    color: var(--shd-text) !important;
+    opacity: .85;
+    transition: opacity .15s ease, color .15s ease;
+}
+
+    .navbar .nav-link:hover,
+    .navbar .nav-link:focus {
+        color: var(--shd-text) !important;
+        opacity: 1;
+        text-decoration: none;
+    }
+    /* Optional: subtle accent when a link is marked "active" */
+    .navbar .nav-link.active {
+        color: var(--shd-accent) !important;
+        opacity: 1;
+    }
+
+/* Card & panel shell reused across pages */
+.shd-card {
+    background-color: var(--shd-surface);
+    border: 1px solid var(--shd-border);
+    border-radius: 16px;
+    box-shadow: 0 6px 20px rgba(0,0,0,.04);
+}
+
+/* ----- Device cards (moved from Dashboard view) ----- */
+.device-card {
+    position: relative;
+    background: var(--shd-surface);
+    border: 1px solid var(--shd-border);
+    border-radius: 16px;
+    box-shadow: 0 6px 18px rgba(0,0,0,.05);
+    padding: 1rem;
+    transition: transform .08s ease-in, box-shadow .2s ease, opacity .15s ease;
+}
+
+    .device-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 10px 28px rgba(0,0,0,.08);
+    }
+
+    .device-card header {
+        border-bottom: 1px dashed var(--shd-border);
+        padding-bottom: .5rem;
+        margin-bottom: .5rem;
+    }
+
+.device-body {
+    padding-top: .25rem;
+}
+
+.emoji {
+    font-size: 1.25rem;
+    line-height: 1;
+}
+
+/* Make disabled state clearly visible in both themes */
+.device-disabled {
+    opacity: .55;
+    filter: grayscale(.35) saturate(.85);
+    box-shadow: none;
+    border-style: dashed;
+}
+
+.device-card.device-disabled::after {
+    /* subtle ribbon that says Disabled */
+    content: "Disabled";
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    font-size: .75rem;
+    padding: .15rem .5rem;
+    border-radius: 999px;
+    border: 1px solid var(--shd-border);
+    color: var(--shd-muted);
+    background: rgba(148,163,184,.15);
+}
+
+/* Status pill */
+.status-chip {
+    padding: .25rem .6rem;
+    border-radius: 999px;
+    font-size: .875rem;
+    font-weight: 600;
+    letter-spacing: .2px;
+    border: 1px solid transparent;
+    display: inline-block;
+}
+
+    .status-chip.online {
+        background: rgba(22, 163, 74, 0.12);
+        color: #16a34a;
+        border-color: rgba(22, 163, 74, 0.35);
+    }
+
+    .status-chip.offline {
+        background: rgba(220, 38, 38, 0.12);
+        color: #dc2626;
+        border-color: rgba(220, 38, 38, 0.35);
+    }
+
+/* Icon buttons (edit/settings/toggle) */
+.icon-btn {
+    background: transparent;
+    border: 1px solid var(--shd-border);
+    border-radius: 10px;
+    padding: .25rem .5rem;
+    font-size: 1rem;
+    line-height: 1;
+    cursor: pointer;
+    color: var(--shd-text);
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 2rem;
+    height: 2rem;
+}
+
+    .icon-btn:hover {
+        background: rgba(0,0,0,.03);
+    }
+
+/* ----- Logs (dashboard + full page) ----- */
+.log-panel {
+    background: var(--shd-surface);
+    border: 1px solid var(--shd-border);
+    border-radius: 12px;
+    overflow: hidden;
+}
+
+.log-item {
+    background: transparent;
+    color: var(--shd-text);
+    border-color: var(--shd-border);
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    overflow: hidden;
+}
+
+/* Dashboard: keep the list small and scroll inside the panel */
+.log-panel--scroll {
+    max-height: 320px; /* fits ~9 items nicely */
+    overflow-y: auto;
+}
+
+/* Full logs page: general table tweaks + long text wrapping */
+details > summary {
+    list-style: none;
+    cursor: pointer;
+}
+
+    details > summary::-webkit-details-marker {
+        display: none;
+    }
+
+/* A) Fix long text wrapping inside details tables */
+.log-item table {
+    table-layout: fixed;
+    width: 100%;
+}
+
+    .log-item table td,
+    .log-item table th {
+        overflow-wrap: anywhere;
+        word-break: break-word;
+        white-space: normal;
+    }
+
+    /* B1) Monospace for values/keys to improve readability */
+    .log-code,
+    .log-item table td,
+    .log-item table th {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+        font-size: 0.9375rem;
+    }
+
+/* Dark mode readability for details table (true/false visibility issue) */
+html[data-theme="dark"] .log-item table td,
+html[data-theme="dark"] .log-item table th {
+    color: var(--shd-text);
+}
+
+/* ----- Forms (dark theme inputs not bright white) ----- */
+html[data-theme="dark"] .form-control,
+html[data-theme="dark"] .form-select,
+html[data-theme="dark"] .form-check-input {
+    background-color: rgba(255,255,255,0.06);
+    border-color: #334155; /* slate-ish border */
+    color: var(--shd-text);
+}
+
+    html[data-theme="dark"] .form-control::placeholder {
+        color: #9aa4b2;
+    }
+
+    html[data-theme="dark"] .form-control:focus,
+    html[data-theme="dark"] .form-select:focus {
+        border-color: var(--shd-accent);
+        box-shadow: 0 0 0 .2rem rgba(59,130,246,.25);
+    }
+
+/* Make list-group borders consistent in dark mode */
+html[data-theme="dark"] .list-group-item {
+    background-color: transparent;
+    border-color: var(--shd-border);
+}
+
+/* Buttons outline contrast in dark mode */
+html[data-theme="dark"] .btn-outline-secondary {
+    color: var(--shd-text);
+    border-color: var(--shd-border);
+}
+
+    html[data-theme="dark"] .btn-outline-secondary:hover {
+        background-color: rgba(255,255,255,0.06);
+    }
