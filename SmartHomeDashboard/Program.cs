@@ -13,6 +13,7 @@ builder.Services.Configure<MonitorOptions>(builder.Configuration.GetSection("Mon
 // Persistence + background services
 builder.Services.AddSingleton<DeviceRepository>();
 builder.Services.AddSingleton<LogsRepository>();
+builder.Services.AddSingleton<AppSettingsStore>();
 builder.Services.AddHostedService<DeviceMonitorService>();
 
 var app = builder.Build();
@@ -25,6 +26,9 @@ using (var scope = app.Services.CreateScope())
 
     var logs = scope.ServiceProvider.GetRequiredService<LogsRepository>();
     _ = logs.GetTail(1);  // triggers logs.json creation if needed
+
+    var settings = scope.ServiceProvider.GetRequiredService<AppSettingsStore>();
+    _ = settings.GetMonitor(); // triggers settings.json creation if needed
 }
 
 if (!app.Environment.IsDevelopment())

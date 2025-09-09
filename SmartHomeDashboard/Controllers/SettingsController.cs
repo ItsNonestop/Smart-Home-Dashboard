@@ -1,68 +1,87 @@
-﻿using System.Linq;
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
 using System.Text;
 using System.Text.Json;
 using ClosedXML.Excel;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Options;
 using SmartHomeDashboard.Models.Options;
 using SmartHomeDashboard.Repositories;
 
 namespace SmartHomeDashboard.Controllers
 {
-    /// <summary>
-    /// Settings (read-only for now) + log downloads (JSON & Excel).
-    /// Includes a POST scaffold ready for future editable settings with validation.
-    /// </summary>
     [AutoValidateAntiforgeryToken]
     public class SettingsController : Controller
     {
-        private readonly IOptions<MonitorOptions> _monitorOptions;
+        private readonly AppSettingsStore _store;
         private readonly LogsRepository _logs;
 
-        public SettingsController(IOptions<MonitorOptions> monitorOptions, LogsRepository logs)
+        public SettingsController(AppSettingsStore store, LogsRepository logs)
         {
-            _monitorOptions = monitorOptions;
+            _store = store;
             _logs = logs;
         }
 
-        // GET: /Settings
         [HttpGet]
         public IActionResult Index()
         {
-            var model = _monitorOptions.Value; // read-only
+            var options = _store.GetMonitor();
+            var model = ToViewModel(options);
             ViewData["Title"] = "Settings";
             return View(model);
         }
 
-        // POST: /Settings (framework only – does NOT persist yet)
         [HttpPost]
-        public IActionResult Index(MonitorOptions input)
+        [ValidateAntiForgeryToken]
+        public IActionResult Index(SettingsViewModel model)
         {
+            if (!TryParsePortsCsv(model.TcpPortsCsv, out var ports, out var csvError))
+                ModelState.AddModelError(nameof(SettingsViewModel.TcpPortsCsv), csvError!);
+
             if (!ModelState.IsValid)
             {
                 ViewData["Title"] = "Settings";
-                TempData["Toast"] = "Validation errors — changes not saved.";
-                return View(input);
+                return View(model);
             }
 
-            TempData["Toast"] = "Editing is disabled in this build. No changes were saved.";
-            ViewData["Title"] = "Settings";
-            return View(_monitorOptions.Value);
+            var options = ToOptions(model, ports);
+            if (!_store.TrySaveMonitor(options, out var changes, out var errorMessage))
+            {
+                ModelState.AddModelError(string.Empty, errorMessage ?? "Failed to save settings.");
+                ViewData["Title"] = "Settings";
+                return View(model);
+            }
+
+            var details = changes?.ToDictionary(
+                kv => kv.Key,
+                kv => JsonSerializer.Serialize(new { old = kv.Value.OldValue, @new = kv.Value.NewValue })
+            );
+
+            _logs.Append(new LogsRepository.LogEntry
+            {
+                Level = "Info",
+                Source = "UserAction",
+                Action = "SettingsChanged",
+                Actor = "system",
+                Message = "Monitor settings updated",
+                Details = details
+            });
+
+            TempData["ToastSuccess"] = "Settings saved.";
+            return RedirectToAction(nameof(Index));
         }
 
-        // GET: /Settings/DownloadLogsJson
         [HttpGet]
         public IActionResult DownloadLogsJson()
         {
-            var entries = _logs.GetAll(); // newest first
+            var entries = _logs.GetAll();
             var json = JsonSerializer.Serialize(entries, new JsonSerializerOptions { WriteIndented = true });
-
             var bytes = Encoding.UTF8.GetBytes(json);
             var fileName = $"logs-{DateTimeOffset.UtcNow:yyyyMMdd-HHmmss}-utc.json";
             return File(bytes, "application/json", fileName);
         }
 
-        // GET: /Settings/DownloadLogsExcel
         [HttpGet]
         public IActionResult DownloadLogsExcel()
         {
@@ -173,7 +192,7 @@ namespace SmartHomeDashboard.Controllers
                 else
                     sourceCell.Style.Font.FontColor = XLColor.FromHtml("#7C3AED"); // purple for system/other
 
-                // Action emphasis (DeviceDeleted red, DeviceEdited blue, DeviceCreated green, ToggleEnabled purple, StatusChanged slate)
+                // Action emphasis
                 var actionCell = ws.Cell(row, 4);
                 var act = (e.Action ?? "").Trim().ToLowerInvariant();
                 actionCell.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
@@ -230,18 +249,18 @@ namespace SmartHomeDashboard.Controllers
             }
 
             // Column sizing & alignment
-            ws.Column(1).Width = 22; // timestamp
-            ws.Column(2).Width = 10; // level
-            ws.Column(3).Width = 12; // source
-            ws.Column(4).Width = 16; // action
-            ws.Column(5).Width = 16; // actor
-            ws.Column(6).Width = 22; // device name
-            ws.Column(7).Width = 42; // device id
-            ws.Column(8).Width = 10; // status
-            ws.Column(9).Width = 16; // ip
-            ws.Column(10).Width = 16; // vlan
-            ws.Column(11).Width = 60; // message
-            ws.Column(12).Width = 60; // details
+            ws.Column(1).Width = 22;
+            ws.Column(2).Width = 10;
+            ws.Column(3).Width = 12;
+            ws.Column(4).Width = 16;
+            ws.Column(5).Width = 16;
+            ws.Column(6).Width = 22;
+            ws.Column(7).Width = 42;
+            ws.Column(8).Width = 10;
+            ws.Column(9).Width = 16;
+            ws.Column(10).Width = 16;
+            ws.Column(11).Width = 60;
+            ws.Column(12).Width = 60;
 
             // Wrap text where useful
             ws.Columns(11, 12).Style.Alignment.WrapText = true;
@@ -277,5 +296,57 @@ namespace SmartHomeDashboard.Controllers
             if (msg.Contains(" offline")) return "offline";
             return "-";
         }
+
+        // ----------- helpers -----------
+
+        private static SettingsViewModel ToViewModel(MonitorOptions src) => new()
+        {
+            PollIntervalSeconds = src.PollIntervalSeconds,
+            PingTimeoutMs = src.PingTimeoutMs,
+            TcpFallbackEnabled = src.TcpFallbackEnabled,
+            TcpPortsCsv = src.TcpPorts is null || src.TcpPorts.Count == 0
+                ? string.Empty
+                : string.Join(",", src.TcpPorts)
+        };
+
+        private static MonitorOptions ToOptions(SettingsViewModel vm, List<int> ports) => new()
+        {
+            PollIntervalSeconds = vm.PollIntervalSeconds,
+            PingTimeoutMs = vm.PingTimeoutMs,
+            TcpFallbackEnabled = vm.TcpFallbackEnabled,
+            TcpPorts = ports
+        };
+
+        private static bool TryParsePortsCsv(string? csv, out List<int> ports, out string? error)
+        {
+            ports = new List<int>();
+            error = null;
+            if (string.IsNullOrWhiteSpace(csv))
+                return true;
+
+            foreach (var segment in csv.Split(',', StringSplitOptions.RemoveEmptyEntries))
+            {
+                var token = segment.Trim();
+                if (int.TryParse(token, out var port))
+                {
+                    ports.Add(port);
+                }
+                else
+                {
+                    error = $"Invalid port \"{token}\".";
+                    return false;
+                }
+            }
+
+            return true;
+        }
+    }
+
+    public class SettingsViewModel
+    {
+        public int PollIntervalSeconds { get; set; }
+        public int PingTimeoutMs { get; set; }
+        public bool TcpFallbackEnabled { get; set; }
+        public string? TcpPortsCsv { get; set; }
     }
 }
